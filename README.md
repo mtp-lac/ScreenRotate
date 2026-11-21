@@ -103,4 +103,4 @@ If your build folder has a Low integrity label, place the published executable i
 
 ## Publishing a release
 
-Create an annotated tag in `vMAJOR.MINOR.PATCH` format on the commit to release, with the release notes as its annotation. Push the tag to GitHub. The **Release** workflow builds the tagged source and publishes `ScreenRotate.exe` and `ScreenRotate.exe.sha256` using the tag annotation as the release notes.
+Create an annotated tag in `vMAJOR.MINOR.PATCH` format on the commit to release, with the release notes as its annotation. Push the tag to GitHub. The **Release** workflow builds the tagged source and publishes `ScreenRotate.exe` and `ScreenRotate.exe.sha256` using the tag annotation as the release notes. You can also run **Release** manually from GitHub Actions and enter an existing version tag; it builds that tag's source.

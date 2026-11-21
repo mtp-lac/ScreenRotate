@@ -4,12 +4,18 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing stable version tag to release
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -21,15 +27,19 @@ jobs:
       - name: Validate version tag
         id: version
         shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          if ($env:GITHUB_REF_NAME -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+          if ($env:RELEASE_TAG -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
             throw 'Release tags must use the stable vMAJOR.MINOR.PATCH format.'
           }
-          "number=$($env:GITHUB_REF_NAME.Substring(1))" >> $env:GITHUB_OUTPUT
+          "tag=$env:RELEASE_TAG" >> $env:GITHUB_OUTPUT
+          "number=$($env:RELEASE_TAG.Substring(1))" >> $env:GITHUB_OUTPUT
 
       - name: Check out the release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/tags/${{ steps.version.outputs.tag }}
           fetch-depth: 0 # gh reads the release notes from the local tag annotation.
           persist-credentials: false
 
@@ -58,7 +68,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           GH_PROMPT_DISABLED: '1'
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          gh release create $env:GITHUB_REF_NAME `
+          gh release create $env:RELEASE_TAG `
             bin/portable/ScreenRotate.exe bin/portable/ScreenRotate.exe.sha256 `
-            --verify-tag --title "Screen Rotate $env:GITHUB_REF_NAME" --notes-from-tag
+            --verify-tag --title "Screen Rotate $env:RELEASE_TAG" --notes-from-tag
