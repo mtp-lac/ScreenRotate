@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    steps:
+      - name: Validate version tag
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw 'Release tags must use the stable vMAJOR.MINOR.PATCH format.'
+          }
+          "number=$($env:GITHUB_REF_NAME.Substring(1))" >> $env:GITHUB_OUTPUT
+
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gh reads the release notes from the local tag annotation.
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build the portable executable
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          dotnet publish ScreenRotate.csproj -c Release -r win-x64 --self-contained `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=None `
+            "-p:Version=$env:RELEASE_VERSION" -warnaserror -o bin/portable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $hash = (Get-FileHash bin/portable/ScreenRotate.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $PWD 'bin/portable/ScreenRotate.exe.sha256'), "$hash  ScreenRotate.exe`n")
+
+      - name: Publish the GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GH_PROMPT_DISABLED: '1'
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            bin/portable/ScreenRotate.exe bin/portable/ScreenRotate.exe.sha256 `
+            --verify-tag --title "Screen Rotate $env:GITHUB_REF_NAME" --notes-from-tag

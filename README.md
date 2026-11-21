@@ -100,3 +100,7 @@ dotnet publish .\ScreenRotate.csproj -c Release -r win-x64 --self-contained -p:P
 ```
 
 If your build folder has a Low integrity label, place the published executable in a regular user folder before launching so it can register the tray icon.
+
+## Publishing a release
+
+Create an annotated tag in `vMAJOR.MINOR.PATCH` format on the commit to release, with the release notes as its annotation. Push the tag to GitHub. The **Release** workflow builds the tagged source and publishes `ScreenRotate.exe` and `ScreenRotate.exe.sha256` using the tag annotation as the release notes.
