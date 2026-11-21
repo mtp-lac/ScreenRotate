@@ -11,6 +11,10 @@ internal sealed class MainForm : Form
     ];
 
     private readonly string settingsPath;
+    private readonly StartupShortcut startupShortcut;
+    private readonly CheckBox startWithWindows = new() { Text = "Start with &Windows", AutoSize = true };
+    private readonly CheckBox startMinimized = new() { Text = "Start &minimized to tray", AutoSize = true };
+    private readonly ToolTip startupTip = new() { AutoPopDelay = 12000 };
     private readonly Hotkeys hotkeys = new();
     private readonly ComboBox displays = new() { DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "Display" };
     private readonly Dictionary<Orientation, ShortcutEditor> editors = [];
@@ -22,21 +26,25 @@ internal sealed class MainForm : Form
     private AppSettings settings;
     private bool exiting;
 
-    public MainForm(Icon icon, string settingsPath)
+    public bool StartMinimized => settings.StartMinimized;
+
+    public MainForm(Icon icon, string settingsPath, StartupShortcut startupShortcut)
     {
         this.settingsPath = settingsPath;
+        this.startupShortcut = startupShortcut;
         var (loaded, warning) = AppSettings.Load(settingsPath);
         settings = loaded;
 
         Text = "Screen Rotate";
         Icon = icon;
         AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(550, 384);
+        ClientSize = new Size(550, 420);
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         BuildSettings();
         LoadEditors(settings);
+        startWithWindows.Checked = startupShortcut.IsEnabled;
         displays.DropDown += (_, _) => RefreshDisplays(SelectedDisplay);
 
         trayMenu.Items.Add("Open settings", null, (_, _) => ShowSettings());
@@ -82,6 +90,7 @@ internal sealed class MainForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         Controls.Add(layout);
@@ -112,8 +121,20 @@ internal sealed class MainForm : Form
             shortcutRows.Controls.Add(editor, 1, row);
         }
 
+        var startupOptions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
+        startWithWindows.Margin = new Padding(3, 6, 18, 0);
+        const string startupWarning = "The Startup shortcut remembers where Screen Rotate was when you enabled it.\n" +
+            "If you move or rename the app, Windows may no longer start it at sign-in.\n" +
+            "Open it from the new location, uncheck this option and click Apply, then check it and click Apply again.";
+        startupTip.SetToolTip(startWithWindows, startupWarning);
+        startWithWindows.AccessibleDescription = startupWarning;
+        startMinimized.Margin = new Padding(3, 6, 3, 0);
+        startupOptions.Controls.Add(startWithWindows);
+        startupOptions.Controls.Add(startMinimized);
+        layout.Controls.Add(startupOptions, 0, 4);
+
         status.TextAlign = ContentAlignment.MiddleLeft;
-        layout.Controls.Add(status, 0, 4);
+        layout.Controls.Add(status, 0, 5);
 
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
         var apply = MakeButton("&Apply", (_, _) => ApplySettings());
@@ -122,9 +143,10 @@ internal sealed class MainForm : Form
         buttons.Controls.Add(MakeButton("Restore de&faults", (_, _) =>
         {
             LoadEditors(AppSettings.Defaults);
+            startWithWindows.Checked = false;
             SetStatus("Defaults are shown. Select Apply to save them.");
         }));
-        layout.Controls.Add(buttons, 0, 5);
+        layout.Controls.Add(buttons, 0, 6);
         AcceptButton = apply;
     }
 
@@ -158,6 +180,7 @@ internal sealed class MainForm : Form
     private void LoadEditors(AppSettings source)
     {
         RefreshDisplays(source.Display);
+        startMinimized.Checked = source.StartMinimized;
         foreach (var (orientation, editor) in editors)
             editor.Value = source.GetShortcut(orientation);
     }
@@ -181,7 +204,7 @@ internal sealed class MainForm : Form
         }
 
         var candidate = new AppSettings(SelectedDisplay, editors[Orientation.Default].Value, editors[Orientation.Left].Value,
-            editors[Orientation.UpsideDown].Value, editors[Orientation.Right].Value);
+            editors[Orientation.UpsideDown].Value, editors[Orientation.Right].Value, startMinimized.Checked);
         try
         {
             if (!hotkeys.TrySet(desired, () => candidate.Save(settingsPath), out Shortcut unavailable))
@@ -201,6 +224,17 @@ internal sealed class MainForm : Form
         foreach (var (shortcut, orientation) in desired)
             activeShortcuts.Add(orientation, shortcut);
         UpdateTrayShortcuts();
+        try
+        {
+            if (startupShortcut.IsEnabled != startWithWindows.Checked)
+                startupShortcut.SetEnabled(startWithWindows.Checked);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
+        {
+            SetStatus("Settings saved, but the Windows Startup shortcut could not be updated. Check the Startup folder and try again.", true);
+            return;
+        }
+
         SetStatus("Settings saved.");
     }
 
@@ -266,6 +300,7 @@ internal sealed class MainForm : Form
             hotkeys.Dispose();
             tray?.Dispose();
             trayMenu.Dispose();
+            startupTip.Dispose();
         }
         base.Dispose(disposing);
     }

@@ -53,7 +53,8 @@ internal readonly record struct Shortcut(Modifiers Modifiers, Keys Key)
     }
 }
 
-internal sealed record AppSettings(string? Display, Shortcut Normal, Shortcut Left, Shortcut UpsideDown, Shortcut Right)
+internal sealed record AppSettings(string? Display, Shortcut Normal, Shortcut Left, Shortcut UpsideDown,
+    Shortcut Right, bool StartMinimized = false)
 {
     public static AppSettings Defaults { get; } = new(null,
         new(DefaultModifiers, Keys.Up), new(DefaultModifiers, Keys.Left),
